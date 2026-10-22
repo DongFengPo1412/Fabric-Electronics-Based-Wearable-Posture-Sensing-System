@@ -4,7 +4,7 @@ An ESP8266/MPU6050 garment prototype archive with tilt estimation, LED feedback,
 
 [简体中文](README.md) · **English** · [日本語](README_JA.md)
 
-**Explore：** [Technical notes](docs/technical-notes.en.md) · [Setup and operation](docs/setup.en.md)
+**Explore:** [Technical notes](docs/technical-notes.en.md) · [Setup and operation](docs/setup.en.md)
 
 This project explores attaching wireless and inertial-sensing hardware to clothing and presenting tilt through LEDs and a browser. Hardware photos, original course sketches, and a later integrated firmware revision are distinguished. The integrated firmware compiles locally; this does not establish that it was the firmware used in the original physical demonstration.
 
