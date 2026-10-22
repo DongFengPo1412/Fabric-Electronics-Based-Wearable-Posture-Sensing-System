@@ -1,50 +1,40 @@
-# Wearable Posture Sensing — 導入と操作
+# Wearable Posture Sensing — Setup and operation
 
-[简体中文](setup.zh-CN.md) · [English](setup.en.md) · **日本語** · [概要](../README_JA.md)
+[简体中文](setup.zh-CN.md) · [English](setup.en.md) · [日本語](setup.ja.md) · [Overview](../README_JA.md)
 
 <a id="environment"></a>
 
-## ツールとスケッチ名
+## ツールとスケッチ
 
-今回コンパイルした組合せはESP8266 Arduino core **3.1.2**、Electronic Cats **MPU6050 1.4.5**（`I2Cdev.h` 同梱）、core付属の `Wire`/`ESP8266WiFi`/`ESP8266WebServer` です。同名の別ライブラリは未検証で、重複ドライバを追加する必要はありません。
-
-[wearable_posture_node.ino](../src/firmware/wearable_posture_node.ino) を同名の独立フォルダ `wearable_posture_node` にコピーします。独自の `setup/loop` を持つ例を混在させません。対応プラットフォームとライブラリ導入後のコマンド：
+ESP8266 core **3.1.2**、Electronic Cats MPU6050 **1.4.5**（I2Cdev を含む）、コアの Wire/Wi-Fi/WebServer でビルド済みです。主 `.ino`、`posture_logic.h`、`network_config.example.h` を独立した `wearable_posture_node` フォルダーにコピーします。旧 `.ino` は同名の個別フォルダーに置き、TCP 例程には `tcp_config.example.h` を含めます。複数の setup/loop は混在させません。
 
 ```powershell
 arduino-cli compile --fqbn esp8266:esp8266:generic ./wearable_posture_node
 ```
 
-リポジトリ外のコピーでコンパイルに成功し、依存マクロの再定義警告が出ました。この組合せでのビルド確認であり、実板のFlash容量・配線・稼働を保証しません。
-
 <a id="wiring"></a>
 
-## ピンと実板条件
+## 端子と実機条件
 
-| コード上のピン/接続 | 確認内容 |
-| --- | --- |
-| GPIO4 / GPIO5 | MPU6050 SDA / SCL、共通GND。電源・論理電圧を確認 |
-| GPIO2 | アクティブLOW LED/PWM。ブザー・振動モータではない |
-| MPU6050アドレス | 今回のライブラリは既定0x68。AD0と実アドレスを確認 |
-| シリアル | 統合版115200、旧TCP例の最終設定38400 |
-
-GPIO番号と各開発基板のD表記は同一とは限りません。板型、Flash、電源、書き込みモードは実際のESP-12F基板に合わせ、旧文書の4 MB・電源IC仕様を前提にしません。
+GPIO4=SDA、GPIO5=SCL、MPU6050 は 0x68、GPIO2 は負論理 LED、全スケッチのシリアルは 115200 baud です。電源、共通 GND、電圧、AD0、Flash/書き込み方式、GPIO2 の起動条件を実基板で確認してください。
 
 <a id="operation"></a>
 
-## ネットワークと操作
+## 設定と実行
 
-1. 統合版のAP/STAと宛先を設定し、ハードウェアを確認してからコンパイル・書き込みします。今回の書き込みはありません。
-2. 115200シリアルでIMU診断とAPアドレスを確認します。失敗後も処理が続くため、表示値のみでは正常取得を確認できません。
-3. 設定したAPへ接続し、出力アドレスの `/` を開きます。`/api/data` で3フィールドを確認できます。
-4. TCPは宛先8080番ポートの外部待受が必要です。`192.168.4.2` は設定値でDHCPの割当保証ではなく、受信ソフトも付属しません。
-5. 既知の取り付け方向でピッチ・ロールを別々に試し、LEDとブラウザの異なる判定を確認します。現行版にWebのLED切替APIはなく、旧UI画像は操作手順にしません。
+ローカル設定は `network_config.example.h` を `network_config.private.h` として保存します。TCP 例程はサンプルから `tcp_config.private.h` を作ります。既存の私有設定は上書きしません。両ファイルは Git の無視対象で、公開サンプルに個人のネットワーク設定は含みません。
+
+実機条件を確認してから書き込みます。シリアルで IMU 状態と AP アドレスを確認し、`/` または `/api/data` を開きます。IMU 障害では正常なゼロ値を表示せず、利用不可として再試行します。受信機を起動し実際の IP を設定、実験網で TCP 8080 を許可します。既定の `.4.2` は割り当てを保証しません。旧 TCP 例程は挨拶のみ、姿勢送信は統合版です。
+
+```powershell
+python tools/telemetry_receiver.py --bind 0.0.0.0 --port 8080
+python -m unittest discover -s tests -p "test_*.py"
+```
 
 <a id="validation"></a>
 
-## 検証範囲と優先課題
+## 検証と今後の作業
 
-実施済み：4スケッチの確認、演習原本とのバイト比較、統合版コンパイル、模擬JSONによるブラウザ表示ロジック確認。ページ確認は内蔵HTMLと模擬入力を用い、実機テレメトリではありません。
+今回、4 スケッチの個別ビルド、フィードバック 7 件、埋め込み画面の模擬 7 件、Python パーサー 3 件が成功しました。JSON は模擬データ、ビルドは公開設定です。書き込み・実通信試験は行っていません。
 
-未実施：センサ・布地・電源の測定、通信受信/切断試験、実際の明るさ・点滅周波数、誤報率、角度誤差、長期装着、安全性の検証。旧文書の±1°、15 ms未満、洗濯耐性、量産品質、50 Hz送信には根拠がありません。
-
-LED/ページ条件の統一、IMU障害、TCPブロッキング、PWM状態を先に整備し、校正と時間測定を行います。融合、堅牢な通信、衣服信頼性は別の今後の作業です。
+角度誤差、動的干渉、取り付け、PWM 実周期、再接続、消費電力、長期着用は未測定です。±1°、<15 ms、耐洗、量産、50 Hz 送信の根拠はありません。融合研究より先に校正と実周期を測定します。

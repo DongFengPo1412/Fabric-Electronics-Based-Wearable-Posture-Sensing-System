@@ -1,23 +1,20 @@
-# Wearable Posture Sensing — 技术说明
+# Wearable Posture Sensing — Technical notes
 
-**简体中文** · [English](technical-notes.en.md) · [日本語](technical-notes.ja.md) · [项目首页](../README.md)
+[简体中文](technical-notes.zh-CN.md) · [English](technical-notes.en.md) · [日本語](technical-notes.ja.md) · [Overview](../README.md)
 
 <a id="versions"></a>
 
-## 课程实验与综合固件的区别
+## 原始例程与集成固件
 
-| 文件 | 实际逻辑 | 缺口 |
-| --- | --- | --- |
-| [blink](../src/firmware/examples/sketch_mar12a1_blink.ino) | GPIO2 高低电平各保持 2 s 的意图 | `pinMod` 拼写错误，不能原样编译 |
-| [PWM](../src/firmware/examples/sketch_mar19a2_pwm.ino) | 0–255 步长 5、每步延时 30 ms 的线性升降 | 无显式 `pinMode`/PWM范围配置；没有非线性校正 |
-| [TCP/IMU](../src/firmware/examples/sketch_mar26a_tcp_imu.ino) | 等待 STA 联网、初始化 MPU6050、尝试文本读写 | 没有 `client.connect()`、没有读取运动量；主机变量为回环地址且未使用；串口先115200再38400 |
-| [综合固件](../src/firmware/wearable_posture_node.ino) | 采集、倾角、PWM、HTTP、TCP客户端 | 后来归档的实现；与当年演示固件的对应关系未证实 |
-
-三个示例与本地课程目录 `新生项目课` 的对应 `.ino` 逐字节相同。综合固件首次出现在仓库 `a353b67`（2026-09-15）；课程原始草图中没有它，不能把新增时间或注释中的“production”当作历史完成证明。
+综合固件首次见于 2026-09-15 的 `a353b67`，不代表当年实机固件。2026-10-23 前三个例程与本地课程文件逐字节一致；本轮主动修复后不再相同。Blink 修正 `pinMod`；PWM 明确输出及 0–255 范围；TCP/IMU 增加实际连接、有限 Wi-Fi 等待、超时和有效目标地址，统一串口 115200。TCP 例程仍只发送问候并初始化 IMU，不采集姿态。综合固件是另一独立草图，不能将其功能追溯归入原始课程演示。
 
 <a id="sensing"></a>
 
-## 采集与数学实现
+## 采集与公式
+
+`updateKinematics()` 校验从 `ACCEL_XOUT_H` 读取的 14 字节长度，提取加速度及陀螺仪量；只有加速度参与以下计算，比例 16384 LSB/g 对应库初始化的 ±2g。没有偏置标定、融合、DMP/FIFO、速度或轨迹重建。合加速度包含重力，不是能量积分；动态加速度及安装角影响倾角。
+
+GPIO4/5 软件 TWI 请求 400 kHz，时钟拉伸上限 20000 µs，读取超时参数 20 ms；不是硬实时保证。读失败标记无效并每 2 s 重试初始化；有限数值且合加速度 >0.05g 才有效。没有把全零读取视为正常姿态。
 
 ```math
 \theta=\mathrm{atan2}(-a_x,\sqrt{a_y^2+a_z^2})\frac{180}{\pi},\quad
@@ -28,41 +25,25 @@
 \lVert\mathbf a\rVert=\sqrt{a_x^2+a_y^2+a_z^2},\qquad a_i=\frac{\mathrm{raw}_i}{16384}
 ```
 
-`updateKinematics()` 经 `getMotion6()` 取六个 `int16_t`，加速度除以16384。已编译的 MPU6050 1.4.5 库默认初始化为 ±2g、陀螺仪 ±250°/s，源码没有显式校准偏置。`atan2` 输出角度，合加速度保留重力分量，不是动能积分。
-
-当前没有使用 `raw_gx/raw_gy/raw_gz`、积分时间或融合状态，没有 DMP/FIFO 采样、航向角、速度/位置重建，也没有动态加速度抑制告警。准静态假设、安装方向、偏置与运动加速度都会影响倾角；不能把传感器分辨率、保留的小数位数或网页显示精度当作系统角度准确率。
-
-`Wire.begin(4,5)` 与 `Wire.setClock(400000)` 是代码配置；ESP8266 core 的 `Wire` 使用软件 TWI 实现，不能称独立硬件 I2C 控制器，也没有信号实测保证。IMU 自检失败只打印警告，未实现注释所说的重新初始化重试或有效数据门控。
-
 <a id="feedback"></a>
 
-## 判据、PWM与时间
+## 阈值、PWM 与时序
 
-| 路径 | 实际判断或定时 |
-| --- | --- |
-| 固件 LED | 仅 `abs(pitch) > 30`；不检查 roll |
-| 浏览器徽标 | `abs(pitch) > 30` 或 `abs(roll) > 35` |
-| PWM 更新 | 检查间隔25 ms；正常步进±5、端点约5/1020，输出 `1023-pwm_val` |
-| 告警闪烁 | 每次更新在0和1023间切换；理想连续条件约20 Hz，不是注释写的10 Hz |
-| TCP发送 | 检查间隔100 ms，约10次/s的名义上限；连接与HTTP处理可延迟 |
-| 网页轮询/主循环 | 浏览器200 ms定时器；固件每轮另有 `delay(10)`，不是固定100 Hz采样器 |
-
-正常 LED 是线性三角波，按代码端点估算周期约10.15 s，不是3 s正弦/Gamma2.2/韦伯定律控制。模式切换没有重置与完整限幅，旧 PWM 状态可能造成端点越界；没有滞回、持续时间判定或运动状态门控。侧倾可导致网页告警而 LED 不告警。这些是需修复的行为，未在本次文档工作中改动代码。
+`posture_logic.h` 为 LED 与 API 共用 `abs(pitch)>30 || abs(roll)>35`；等于阈值不报警。无效数据熄灯。模式切换复位 PWM，强度限定 0–1023，GPIO2 输出为 `1023-intensity`。正常状态每 25 ms 步进 ±5，为线性三角波；报警每 50 ms 翻转，理想完整周期 100 ms（10 Hz）。这些是代码目标，网络与主循环会影响实际周期，没有正弦/Gamma 控制、迟滞或持续时间判据。
 
 <a id="network"></a>
 
-## 网络、页面与协议
+## 网络与报文
 
-`setup()` 配置 AP+STA 模式并启动HTTP80，只注册 GET `/` 和 GET `/api/data`。API字段是 `pitch`、`roll`、`accel`；固件保留两位小数，浏览器显示一位角度/两位合加速度。没有远程开关灯、阈值设置、云服务或手机App控制路由。
+HTTP 端口 80 仅有 GET `/` 和 `/api/data`。JSON 含 `pitch/roll/accel`、`valid`、`abnormal`、两个阈值及 `age_ms`；无效数值为 `null`。网页采用后端报警结果，样本超过 1000 ms、无效或断连时清除正常显示；请求 1500 ms 中止，结束后 200 ms 再轮询，无重叠请求。没有远程灯控/阈值修改路由。
 
-`streamTelemetry()` 使用阻塞式 `WiFiClient.connect` 重连至配置的 `192.168.4.2:8080`，成功后发送下列换行结束文本；接收端不在仓库中，没有应用层确认、时间戳、序列号或接收反馈。
+TCP 仅发送有效样本，尝试间隔至少 100 ms，重连间隔 2 s；数字 IPv4 避免 DNS，连接超时参数 50 ms，发送空间不足时跳过。仍是单线程同步客户端，不能据此宣称端到端 50 ms 时延。附带 `tools/telemetry_receiver.py`（Python 标准库），严格解析有限数值和行长度；兼容历史问候并回复，但数值流没有应用 ACK、时间戳或序号。
+
+AP 地址以串口 `softAPIP()` 为准，接收器默认目标 `192.168.4.2:8080` 不是保证分配的地址。网络参数使用示例头文件或本机忽略的私有头文件；历史提交中的旧配置不因此被清除。
 
 ```text
 PKT:P=<pitch>,R=<roll>,A=<acceleration_in_g>
-
 ```
-
-AP默认网关通常为 `192.168.4.1`，应以串口 `softAPIP()` 输出为准；旧图片中的 `192.168.147.81` 不能当作这个 AP 的固定地址。综合固件串口115200仅打印初始化信息，没有每帧串口三轴数据输出。反复连接失败可能拖慢全部单线程功能；没有可靠实时性测量。网络凭据需要按自己的网络配置，文档不重复发布 STA 口令。
 
 <a id="hardware"></a>
 

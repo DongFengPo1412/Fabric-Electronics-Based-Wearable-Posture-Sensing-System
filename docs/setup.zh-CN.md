@@ -1,50 +1,40 @@
-# Wearable Posture Sensing — 部署与操作
+# Wearable Posture Sensing — Setup and operation
 
-**简体中文** · [English](setup.en.md) · [日本語](setup.ja.md) · [项目首页](../README.md)
+[简体中文](setup.zh-CN.md) · [English](setup.en.md) · [日本語](setup.ja.md) · [Overview](../README.md)
 
 <a id="environment"></a>
 
-## 工具与草图目录
+## 环境与草图
 
-本次编译组合：ESP8266 Arduino core **3.1.2**、Electronic Cats **MPU6050 1.4.5**（自带 `I2Cdev.h`）、core自带 `Wire`/`ESP8266WiFi`/`ESP8266WebServer`。没有测试所有同名MPU6050库的兼容性，不需要额外叠加另一个同名驱动。
-
-将 [wearable_posture_node.ino](../src/firmware/wearable_posture_node.ino) 复制到名为 `wearable_posture_node` 的独立草图目录，Arduino要求目录与主文件同名。不要合并 `examples` 下具有各自 `setup/loop` 的程序。已安装对应平台和库时可编译：
+已编译：ESP8266 core **3.1.2**、Electronic Cats MPU6050 **1.4.5**（包含 I2Cdev）、核心 Wire/Wi-Fi/WebServer。将主 `.ino`、`posture_logic.h` 和 `network_config.example.h` 复制到独立 `wearable_posture_node` 文件夹。三个历史 `.ino` 分别置于与文件同名的草图目录；TCP 例程同时带上 `tcp_config.example.h`。不要合并多个 setup/loop。
 
 ```powershell
 arduino-cli compile --fqbn esp8266:esp8266:generic ./wearable_posture_node
 ```
 
-本次在仓库外副本编译成功，有依赖宏重定义警告；这仅证明该工具与库组合能生成固件，不代表实板Flash容量、连线或功能已验证。
-
 <a id="wiring"></a>
 
-## 引脚与实板条件
+## 引脚与实物条件
 
-| 代码引脚/接口 | 接线依据 |
-| --- | --- |
-| GPIO4 / GPIO5 | MPU6050 SDA / SCL，共地；核对模块供电与逻辑电平 |
-| GPIO2 | 低有效LED/PWM；不是蜂鸣器或振动马达 |
-| MPU6050 默认地址 | 已编译库默认0x68；核对AD0与模块地址 |
-| 串口 | 综合固件115200；历史TCP示例最后为38400 |
-
-GPIO编号不等于任意开发板丝印D编号。板型、Flash、电源、下载启动方式依据实际 ESP-12F 载板，不沿用旧文档未经核实的4MB和电源芯片设定。
+GPIO4=SDA、GPIO5=SCL，MPU6050 地址 0x68；GPIO2 为低有效 LED，所有程序串口 115200。供电、共地、电平、AD0、实际 Flash/烧录方式和 GPIO2 启动电平需按实板确认。
 
 <a id="operation"></a>
 
-## 网络与使用步骤
+## 配置与运行
 
-1. 独立配置综合固件中的 AP/STA 与遥测目标，编译并在确认硬件后自行烧录；本次未烧录。
-2. 查看115200串口的IMU自检和AP地址。当前失败后仍继续运行，显示数值不等于传感器有效。
-3. 连接配置的AP，浏览串口显示地址的 `/` 页面；访问 `/api/data` 可检查三个JSON字段。
-4. TCP需要外部接收服务器在目标地址8080端口监听。目标 `192.168.4.2` 是配置值，DHCP不保证接收机一定获得它；地址应核对，仓库没有接收软件。
-5. 对照已知安装方向分别测试俯仰与侧倾，同时观察LED和网页不同判据。当前没有网页开关灯按钮接口；旧网页截图不作为现固件操作指南。
+如需自定义配置，在本机将 `network_config.example.h` 另存为 `network_config.private.h`；TCP 例程将 `tcp_config.example.h` 另存为 `tcp_config.private.h`。不要覆盖已有私有配置。私有文件已忽略，公开模板不含个人网络配置。
+
+核实硬件后再编译烧录。串口检查 IMU 状态和 AP 地址，浏览 `/` 或 `/api/data`。IMU 失效会显示不可用并重试，不把零值当成正常。启动接收器后将目标 IP 配成接收主机的实际地址，允许实验网入站 TCP 8080；默认 `.4.2` 不代表已经获得该地址。旧 TCP 例程只发送问候，综合版才发送姿态。
+
+```powershell
+python tools/telemetry_receiver.py --bind 0.0.0.0 --port 8080
+python -m unittest discover -s tests -p "test_*.py"
+```
 
 <a id="validation"></a>
 
-## 验证边界与改进顺序
+## 验证与后续工作
 
-已完成：四份源程序阅读、课程原始示例逐字节比对、综合固件编译和浏览器页面逻辑的模拟数据检查。页面检查仅使用主固件内嵌HTML与模拟JSON，不是实机遥测。
+本轮完成四个独立草图编译、反馈逻辑 7 项、内嵌页面模拟 7 项和 Python 解析器 3 项检查。浏览器使用模拟 JSON，编译使用公开配置；没有实体烧录或链路测试。
 
-未完成：传感器/织物/供电实测、网络收发与断连测试、实际亮度和闪烁频率、误报率、角度误差、长期穿戴或安全性验证。旧“±1°”“<15ms”“耐水洗”“量产级”“50Hz串流”等说法没有证据。
-
-后续先统一LED/网页阈值并处理IMU失败、TCP阻塞和PWM状态，再做标定与采样计时；姿态融合、稳定网络协议及服饰可靠性作为单独的后续工作。
+仍需测量角度误差、动态干扰、安装方向、真实 PWM 周期、断连恢复、功耗和长时佩戴。±1°、<15 ms、耐洗、量产和 50 Hz 流式传输均无证据；校准和实体计时先于融合研究。

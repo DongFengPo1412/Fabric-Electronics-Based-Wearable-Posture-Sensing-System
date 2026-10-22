@@ -2,10 +2,11 @@
 #include "Wire.h"
 #include "I2Cdev.h"
 #include "MPU6050.h"
-#define AP_SSID "ACE"
-#define AP_PSW  "66666666"
-const uint16_t port = 8080;
-const char * host = "127.0.0.1";
+#if __has_include("tcp_config.private.h")
+#include "tcp_config.private.h"
+#else
+#include "tcp_config.example.h"
+#endif
 WiFiClient client;
 MPU6050 accelgyro;
 
@@ -13,21 +14,22 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   WiFi.mode(WIFI_STA);
-  WiFi.begin(AP_SSID,AP_PSW);
+  WiFi.begin(TCP_WIFI_SSID,TCP_WIFI_PASSWORD);
   Serial.println("Connecting to WiFi... ");
-  while(WiFi.status() != WL_CONNECTED){
+  unsigned long start = millis();
+  while(WiFi.status() != WL_CONNECTED && millis()-start < 15000){
     Serial.println("Failed!");
     delay(2000);
   }
   Serial.println("");
-  Serial.println("Connected");
+  Serial.println(WiFi.status() == WL_CONNECTED ? "Connected" : "WiFi unavailable; connection will be retried");
   Serial.println("Local IP:"); 
   Serial.println(WiFi.localIP());
   // put your setup code here, to run once:
 
   Wire.begin();
 
-  Serial.begin(38400);
+  client.setTimeout(500);
 
   Serial.println("Initializing I2C devices...");
   accelgyro.initialize();
@@ -38,6 +40,7 @@ void setup() {
 
 void loop() {
   Serial.println("Send The String to TCP Server :\"I am Esp8266\"");
+  if (WiFi.status() != WL_CONNECTED || !client.connect(TCP_SERVER_HOST,TCP_SERVER_PORT)) { delay(2000); return; }
   client.println(String("I am Esp8266"));
 
   String line = client.readStringUntil('\n');

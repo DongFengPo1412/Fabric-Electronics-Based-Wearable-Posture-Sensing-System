@@ -1,0 +1,4 @@
+src/firmware/network_config.private.h
+src/firmware/examples/tcp_config.private.h
+__pycache__/
+*.pyc

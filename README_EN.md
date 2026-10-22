@@ -1,72 +1,59 @@
 # Wearable Posture Sensing
 
-An ESP8266/MPU6050 garment prototype archive with tilt estimation, LED feedback, and wireless telemetry firmware.
+Garment-mounted ESP8266 / MPU6050 prototype material and later tilt, LED, and network telemetry firmware. Historical hardware, course sketches, and the 2026 integrated firmware are documented separately; successful compilation does not establish historical deployment.
 
 [简体中文](README.md) · **English** · [日本語](README_JA.md)
 
-**Explore:** [Technical notes](docs/technical-notes.en.md) · [Setup and operation](docs/setup.en.md)
+[Technical notes](docs/technical-notes.en.md) · [Setup](docs/setup.en.md)
 
-This project explores attaching wireless and inertial-sensing hardware to clothing and presenting tilt through LEDs and a browser. Hardware photos, original course sketches, and a later integrated firmware revision are distinguished. The integrated firmware compiles locally; this does not establish that it was the firmware used in the original physical demonstration.
+## Evidence and implementation scope
 
-## Project and evidence scope
-
-| Material | Supported content | Evidence boundary |
+| Material | Confirmed content | Boundary |
 | --- | --- | --- |
-| Garment and node photos | Circular ESP-12F node, MPU6050 module, garment mounting | Not proof of yarn composition, washability, original PCB design, or angle accuracy |
-| Three original sketches | Blink, linear PWM, Wi-Fi/IMU initialization, attempted TCP I/O | Typo and connection gaps; not an integrated posture system |
-| `wearable_posture_node.ino` | Accelerometer tilt, GPIO2 PWM, HTTP JSON, TCP text | Added on 2026-09-15; compiled in this review, not hardware-tested |
+| Hardware photographs | Circular ESP-12F node, MPU6050, garment mounting | No proof of material performance, original PCB design, or angle accuracy |
+| Three course sketches | Blink, linear PWM, Wi-Fi/IMU initialization and greeting | Spelling, PWM setup, and connection logic repaired on 2026-10-23; not a complete posture system |
+| Integrated firmware | Accelerometer tilt, shared thresholds, LED, HTTP, TCP | First archived on 2026-09-15; current maintenance does not establish deployment in 2024 |
 
-The engineering content is sensing, garment mounting, embedded interaction, and interface integration. Unimplemented fusion algorithms and unmeasured accuracy are not used as results.
-
-## Current firmware data flow
+## Data flow
 
 ```mermaid
 flowchart LR
- I[MPU6050 motion registers] --> W[ESP8266 Wire acquisition]
- W --> T[Accelerometer tilt and magnitude]
- T --> L[Pitch threshold and GPIO2 PWM]
- T --> H[HTTP JSON and browser dashboard]
- T --> C[TCP text client]
- C --> R[External receiver required]
+ I[MPU6050 checked register read] --> V[Sample validity and accelerometer tilt]
+ V --> L[Shared thresholds and GPIO2 PWM]
+ V --> H[HTTP JSON and dashboard]
+ V --> C[TCP client with retry backoff]
+ C --> R[Python receiver]
 ```
 
-`getMotion6()` reads six raw channels, but tilt uses accelerometer data only; gyro readings do not enter a fusion algorithm. Browser and LED thresholds differ, as explained in the [technical notes](docs/technical-notes.en.md#feedback).
+## Implemented software
 
-## Implemented software paths
-
-- `Wire` acquisition on GPIO4/5 with a requested 400 kHz bus clock; static-gravity tilt and acceleration magnitude.
-- Active-low GPIO2 PWM: linear brightness steps normally and on/off switching above the pitch threshold.
-- SoftAP + Station, HTTP `/` and `/api/data`; a browser polling timer configured for 200 ms.
-- `PKT:P=...,R=...,A=...` text to an external host, with a 100 ms send-check interval.
-
-These describe code paths and configured intervals, not measured refresh rates, latency, or stable sampling rates. Complementary filtering, yaw/position trajectories, strain-bridge acquisition, and clinical diagnosis are absent.
+- GPIO4/5 software TWI requests 400 kHz; checked 14-byte IMU reads and 2 s recovery retries.
+- LED and page share absolute pitch >30° or roll >35°; invalid samples turn the LED off and show unavailable data.
+- Active-low GPIO2 PWM with clamped state and reset on mode changes; 25 ms normal steps and 50 ms alert toggles.
+- AP+STA, HTTP dashboard, and validity/sample-age JSON; polling waits 200 ms after completion and clears healthy status on failure.
+- Valid TCP samples are attempted at least 100 ms apart, with 2 s reconnect backoff; a Python receiver is included.
 
 ## Garment prototype
 
-![Historical garment and sensing-node photo](docs/images/demo_e_textile_garment.jpg)
-
-The photo shows a circular ESP-12F board and external inertial module on clothing. Conductive stitching explores interconnection; it is not evidence of implemented resistive strain sensing. See [hardware evidence](docs/technical-notes.en.md#hardware).
+![Historical garment prototype](docs/images/demo_e_textile_garment.jpg)
 
 ## Layout and reproduction
 
 ```text
 src/firmware/
   wearable_posture_node.ino
-  examples/
-    sketch_mar12a1_blink.ino
-    sketch_mar19a2_pwm.ino
-    sketch_mar26a_tcp_imu.ino
-docs/
-  images/
-  technical-notes.*.md
-  setup.*.md
-LICENSE
+  posture_logic.h
+  network_config.example.h
+  examples/                    # separate sketches + tcp_config.example.h
+tools/telemetry_receiver.py
+tests/
+docs/                          # images, technical-notes.*, setup.*
 ```
 
-The [setup guide](docs/setup.en.md) covers sketch naming, the compiled dependencies, pins, networking, and limitations of each historical example. Open the integrated firmware and the three examples separately, not as one Arduino sketch.
+[Setup](docs/setup.en.md)
 
-## Verification and limits
+## Verification and limitations
 
-On 2026-10-23, the integrated firmware compiled with ESP8266 core 3.1.2, MPU6050 1.4.5, and `esp8266:esp8266:generic`. Dependency macro-redefinition warnings remain. No flashing, live IMU access, TCP reception, or human-posture accuracy test was performed.
+On 2026-10-23 the integrated sketch and all three separate examples compiled with ESP8266 core 3.1.2 and MPU6050 1.4.5. Seven feedback, seven mocked-browser, and three packet-parser cases passed. No flashing, physical IMU, wireless link, timing, power, or human angle-accuracy test was performed. Dependency macro-redefinition warnings remain.
 
-Individual contributions to the course hardware and later firmware, exact battery/power ICs, original PCB design, and the historical deployed firmware remain unverified. Unify thresholds, handle faults/blocking, and calibrate/test before investigating fusion. See [LICENSE](LICENSE); course and component images require their own rights/provenance checks.
+Tilt uses acceleration only: no sensor fusion, yaw/trajectory, strain acquisition, or medical diagnosis. Calibration, physical fault recovery, and timing measurements remain next steps. Exact personal/team ownership, deployed historical firmware, materials, and power hardware require original records. See [LICENSE](LICENSE) for code; third-party images and component material are not automatically relicensed.

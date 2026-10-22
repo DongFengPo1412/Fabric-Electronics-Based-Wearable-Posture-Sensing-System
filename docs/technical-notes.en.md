@@ -1,23 +1,20 @@
 # Wearable Posture Sensing — Technical notes
 
-[简体中文](technical-notes.zh-CN.md) · **English** · [日本語](technical-notes.ja.md) · [Overview](../README_EN.md)
+[简体中文](technical-notes.zh-CN.md) · [English](technical-notes.en.md) · [日本語](technical-notes.ja.md) · [Overview](../README_EN.md)
 
 <a id="versions"></a>
 
-## Original sketches versus integrated firmware
+## Original sketches and integrated firmware
 
-| File | Actual logic | Gap |
-| --- | --- | --- |
-| [Blink](../src/firmware/examples/sketch_mar12a1_blink.ino) | Intended GPIO2 high/low intervals of 2 s each | Misspelled `pinMod` prevents compilation as written |
-| [PWM](../src/firmware/examples/sketch_mar19a2_pwm.ino) | Linear 0–255 ramps, step 5, delay 30 ms | No explicit `pinMode` or PWM-range configuration; no nonlinear correction |
-| [TCP/IMU](../src/firmware/examples/sketch_mar26a_tcp_imu.ino) | Wait for STA connection, initialize MPU6050, attempt text I/O | No `client.connect()` or motion read; unused loopback host; serial changes from 115200 to 38400 |
-| [Integrated firmware](../src/firmware/wearable_posture_node.ino) | Acquisition, tilt, PWM, HTTP, TCP client | Later archived implementation, not matched to the original demonstration |
-
-All three examples are byte-identical to their corresponding local course `.ino` files. The integrated firmware first appears in commit `a353b67` on 2026-09-15 and is absent from those original sketches. Its addition date and “production” wording in comments do not establish historical deployment.
+The integrated sketch first appears in `a353b67` on 2026-09-15, which does not establish historical deployment. Before this maintenance the three examples were byte-identical to the local course originals; they now deliberately differ. Blink fixes `pinMod`; PWM sets its output and 0–255 range; TCP/IMU adds a real connection, bounded Wi-Fi wait, timeouts, a usable target address, and consistent 115200-baud logging. That example still initializes the IMU and sends a greeting, without sampling posture. The integrated sketch remains separate; its features must not be attributed retrospectively to the course demonstration.
 
 <a id="sensing"></a>
 
 ## Acquisition and equations
+
+`updateKinematics()` checks a 14-byte read from `ACCEL_XOUT_H`, extracting accelerometer and gyro values. Only acceleration enters the equations below; 16384 LSB/g matches the library initialization at ±2g. There is no offset calibration, fusion, DMP/FIFO, velocity, or trajectory reconstruction. Magnitude includes gravity, not integrated energy; dynamic acceleration and mounting affect tilt.
+
+GPIO4/5 software TWI requests 400 kHz, with a 20000 µs clock-stretch limit and a 20 ms read-timeout argument; these are not hard real-time guarantees. Failed reads invalidate the sample and trigger initialization retries every 2 s. Finite values and magnitude >0.05g are required; an all-zero read is not treated as a healthy posture.
 
 ```math
 \theta=\mathrm{atan2}(-a_x,\sqrt{a_y^2+a_z^2})\frac{180}{\pi},\quad
@@ -28,41 +25,25 @@ All three examples are byte-identical to their corresponding local course `.ino`
 \lVert\mathbf a\rVert=\sqrt{a_x^2+a_y^2+a_z^2},\qquad a_i=\frac{\mathrm{raw}_i}{16384}
 ```
 
-`updateKinematics()` reads six `int16_t` values using `getMotion6()` and divides acceleration by 16384. The compiled MPU6050 1.4.5 library initializes ±2g and ±250°/s ranges by default; the sketch does not explicitly calibrate offsets. `atan2` results are in degrees. Acceleration magnitude includes gravity and is not an energy integral.
-
-`raw_gx/raw_gy/raw_gz`, integration time, and a fusion state are unused. There is no DMP/FIFO sampling, yaw, velocity/position reconstruction, or motion-based alarm suppression. Quasi-static assumptions, mounting, offsets, and dynamic acceleration affect tilt. Sensor resolution, decimal formatting, and display precision are not system angle accuracy.
-
-`Wire.begin(4,5)` and `Wire.setClock(400000)` configure the interface. ESP8266 core `Wire` uses software TWI rather than an independent hardware I2C controller; signal quality has not been measured. Failed IMU self-test only prints a warning, without the reinitialization retry suggested by the comment or a valid-data gate.
-
 <a id="feedback"></a>
 
 ## Thresholds, PWM, and timing
 
-| Path | Actual rule or interval |
-| --- | --- |
-| Firmware LED | `abs(pitch) > 30` only; roll ignored |
-| Browser badge | `abs(pitch) > 30` or `abs(roll) > 35` |
-| PWM update | 25 ms check; normal steps ±5 near endpoints 5/1020; output `1023-pwm_val` |
-| Alert | Toggle between 0 and 1023 each update; ideally about 20 Hz, not the comment's 10 Hz |
-| TCP | 100 ms check, nominally at most about ten sends/s; connection/HTTP work can delay it |
-| Browser/main loop | 200 ms browser timer; firmware also calls `delay(10)`, not a fixed 100 Hz sampler |
-
-Normal brightness is a linear triangular ramp with a source-derived period near 10.15 s, not a 3 s sine/Gamma-2.2/Weber-law controller. Mode transitions do not reset or fully clamp PWM state, allowing endpoint excursions. There is no hysteresis, duration requirement, or motion gate. Roll can trigger the browser while leaving the LED unalerted. These are current behavior gaps; this documentation revision does not change them.
+`posture_logic.h` shares `abs(pitch)>30 || abs(roll)>35` between LED and API; equality does not alert. Invalid data turns the LED off. Mode changes reset PWM, intensity is clamped to 0–1023, and GPIO2 receives `1023-intensity`. Normal steps are ±5 every 25 ms, forming a linear triangular ramp. Alert toggles every 50 ms, ideally a 100 ms complete cycle (10 Hz). These are source targets affected by network and loop work, without sine/Gamma control, hysteresis, or a persistence criterion.
 
 <a id="network"></a>
 
-## Networking, page, and packet format
+## Networking and packets
 
-`setup()` selects AP+STA and HTTP port 80, registering only GET `/` and GET `/api/data`. JSON fields are `pitch`, `roll`, and `accel`. Firmware formats two decimal places; the page shows one for angles and two for magnitude. No remote LED toggle, threshold setting, cloud service, or app-control route exists.
+HTTP port 80 exposes only GET `/` and `/api/data`. JSON includes `pitch/roll/accel`, `valid`, `abnormal`, both thresholds, and `age_ms`; invalid measurements are `null`. The page uses the backend alert decision and clears healthy status on invalid data, age >1000 ms, or connection failure. Requests abort after 1500 ms and restart 200 ms after completion, without overlap. No remote LED/threshold control route exists.
 
-`streamTelemetry()` reconnects through blocking `WiFiClient.connect` to configured `192.168.4.2:8080`, then sends newline-terminated text below. A receiver is not included. There is no application acknowledgment, timestamp, sequence number, or receiver feedback.
+TCP sends valid samples only, at least 100 ms apart, with 2 s reconnect backoff. Numeric IPv4 avoids DNS; connection timeout is configured at 50 ms, and insufficient write space skips a sample. This remains a synchronous single-threaded client, not an end-to-end 50 ms guarantee. `tools/telemetry_receiver.py` uses the Python standard library and validates finite numbers and line length. It can acknowledge the legacy greeting; numeric telemetry has no application ACK, timestamp, or sequence number.
+
+Use the printed `softAPIP()` address. Default receiver target `192.168.4.2:8080` is not a guaranteed lease. Example or locally ignored private headers hold network configuration; this does not remove old configuration from Git history.
 
 ```text
 PKT:P=<pitch>,R=<roll>,A=<acceleration_in_g>
-
 ```
-
-The default AP gateway is usually `192.168.4.1`; use the printed `softAPIP()` value. Historical `192.168.147.81` screenshots do not define this AP address. The integrated sketch's 115200-baud serial output logs initialization, not continuous three-axis samples. Repeated connection failure can delay all single-threaded tasks. Configure credentials for your network; the STA password is not repeated here.
 
 <a id="hardware"></a>
 

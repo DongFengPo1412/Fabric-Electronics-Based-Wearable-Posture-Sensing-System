@@ -1,5 +1,7 @@
 int led=2;
 void setup() {
+  pinMode(led, OUTPUT);
+  analogWriteRange(255);
   // put your setup code here, to run once:
 
 }

@@ -1,72 +1,59 @@
 # Wearable Posture Sensing
 
-ESP8266・MPU6050 を使う衣服試作資料と、傾斜角推定、LEDフィードバック、無線テレメトリのファームウェア。
+衣服に取り付けた ESP8266 / MPU6050 試作機の資料と、後年整備した傾斜角・LED・通信ファームウェアです。実物資料、授業のスケッチ、2026 年の統合版を区別しており、ビルド成功を当時の実機動作の証明とはしていません。
 
 [简体中文](README.md) · [English](README_EN.md) · **日本語**
 
-**詳細：** [技術ノート](docs/technical-notes.ja.md) · [導入と操作](docs/setup.ja.md)
+[Technical notes](docs/technical-notes.ja.md) · [Setup](docs/setup.ja.md)
 
-無線ノードと慣性センサを衣服へ取り付け、LEDとブラウザで傾きを示す試作です。実物写真、演習当時のスケッチ、後から追加された統合ファームウェアを区別します。統合版は今回コンパイルできましたが、当時の実機デモで使用した版との一致は確認できていません。
+## 資料と実装範囲
 
-## プロジェクトと根拠の範囲
-
-| 資料 | 確認できる内容 | 確認できない点 |
+| 資料 | 確認できる内容 | 範囲 |
 | --- | --- | --- |
-| 衣服・ノード写真 | ESP-12F円形ノード、MPU6050、衣服への取り付け | 糸の組成、洗濯耐性、PCB独自設計、角度精度 |
-| 演習の3スケッチ | 点灯、線形PWM、Wi-Fi/IMU初期化、TCP入出力の試行 | 誤記と接続不足があり、統合姿勢システムではない |
-| `wearable_posture_node.ino` | 加速度による傾斜、GPIO2 PWM、HTTP JSON、TCPテキスト | 2026-09-15追加。今回コンパイル済み、実機未検証 |
+| 実物写真 | ESP-12F 円形基板、MPU6050、衣服への取り付け | 材料性能、独自 PCB 設計、角度精度は未確認 |
+| 授業の 3 スケッチ | 点滅、線形 PWM、Wi-Fi/IMU 初期化と挨拶送信 | 2026-10-23 に誤記、PWM 設定、接続処理を修正。完全な姿勢システムではない |
+| 統合版 | 加速度による傾斜推定、共通閾値、LED、HTTP、TCP | 初回登録は 2026-09-15。今回の保守は 2024 年の導入を証明しない |
 
-価値はセンシング、衣服への取り付け、組み込み操作、複数インターフェースの統合にあります。未実装のセンサ融合や未測定の精度は成果に含めません。
-
-## 現行ファームウェアのデータ経路
+## データフロー
 
 ```mermaid
 flowchart LR
- I[MPU6050 motion registers] --> W[ESP8266 Wire acquisition]
- W --> T[Accelerometer tilt and magnitude]
- T --> L[Pitch threshold and GPIO2 PWM]
- T --> H[HTTP JSON and browser dashboard]
- T --> C[TCP text client]
- C --> R[External receiver required]
+ I[MPU6050 checked register read] --> V[Sample validity and accelerometer tilt]
+ V --> L[Shared thresholds and GPIO2 PWM]
+ V --> H[HTTP JSON and dashboard]
+ V --> C[TCP client with retry backoff]
+ C --> R[Python receiver]
 ```
 
-`getMotion6()` は6軸を読みますが、傾斜角は加速度のみで計算し、ジャイロ値を融合しません。LEDとブラウザの判定条件も異なります。[技術ノート](docs/technical-notes.ja.md#feedback) を参照してください。
+## 主な実装
 
-## 実装されているソフトウェア
+- GPIO4/5 のソフトウェア TWI で 400 kHz を要求し、IMU の 14 バイト読み取りを検査。障害後は 2 s 間隔で再初期化。
+- LED と画面はピッチ絶対値 >30° またはロール絶対値 >35° を共用。無効データでは消灯し、利用不可を表示。
+- GPIO2 の負論理 PWM は範囲を制限し、モード変更時にリセット。通常 25 ms 刻み、警告は 50 ms ごとに反転。
+- AP+STA、HTTP 画面、有効性と経過時間を含む JSON。取得完了から 200 ms 後に再取得し、失敗時は正常表示を解除。
+- TCP は有効サンプルのみ最短 100 ms 間隔で送信を試み、再接続は 2 s 間隔。Python 受信ツールを同梱。
 
-- GPIO4/5の `Wire` 取得。バスクロック設定400 kHz、静的重力による傾斜角と合成加速度。
-- GPIO2のアクティブLOW PWM。通常時は線形増減、ピッチしきい値超過時は点滅。
-- SoftAP + Station、HTTP `/` と `/api/data`。ブラウザのポーリング設定は200 ms。
-- 外部ホストへの `PKT:P=...,R=...,A=...` 送信。送信可否の確認間隔は100 ms。
+## 服飾試作機
 
-これらはコードの処理と設定間隔で、実測の更新率・遅延・安定サンプリング周波数ではありません。相補フィルタ、ヨー・位置軌跡、ひずみブリッジ取得、医療診断はありません。
-
-## 衣服試作
-
-![過去の衣服とセンシングノード](docs/images/demo_e_textile_garment.jpg)
-
-円形ESP-12F基板と外付け慣性センサを衣服に取り付けた写真です。導電糸による接続の試行と、抵抗式ひずみセンサの実装は別です。[実物資料の範囲](docs/technical-notes.ja.md#hardware) も参照してください。
+![Historical garment prototype](docs/images/demo_e_textile_garment.jpg)
 
 ## 構成と再現
 
 ```text
 src/firmware/
   wearable_posture_node.ino
-  examples/
-    sketch_mar12a1_blink.ino
-    sketch_mar19a2_pwm.ino
-    sketch_mar26a_tcp_imu.ino
-docs/
-  images/
-  technical-notes.*.md
-  setup.*.md
-LICENSE
+  posture_logic.h
+  network_config.example.h
+  examples/                    # separate sketches + tcp_config.example.h
+tools/telemetry_receiver.py
+tests/
+docs/                          # images, technical-notes.*, setup.*
 ```
 
-[導入手順](docs/setup.ja.md) にスケッチ名、コンパイル済み依存関係、ピン、ネットワーク、各旧例の制約を記載しています。統合版と3例は別々に開き、一つのArduinoスケッチへ混在させないでください。
+[Setup](docs/setup.ja.md)
 
-## 検証・担当・制約
+## 検証と限界
 
-2026-10-23に ESP8266 core 3.1.2、MPU6050 1.4.5、`esp8266:esp8266:generic` で統合版のコンパイルに成功しました。依存ライブラリのマクロ再定義警告は残ります。書き込み、実IMU、TCP受信、人体姿勢の精度試験は行っていません。
+2026-10-23 に ESP8266 core 3.1.2 / MPU6050 1.4.5 で統合版と 3 例程を個別にビルドしました。フィードバック 7 件、模擬ブラウザー 7 件、パーサー 3 件が成功。書き込み、実 IMU、無線通信、周期、消費電力、人体での角度精度は未測定です。依存ライブラリのマクロ再定義警告は残ります。
 
-演習ハードウェアと後補ファームウェアの個人分担、電池・電源IC、元のPCB設計、当時の稼働版は未確認です。判定の統一、障害・ブロッキング処理、校正と実測を先行し、その後に融合を検討します。[LICENSE](LICENSE) は外部の演習・部品画像の権利を自動的に移転するものではありません。
+傾斜推定は加速度のみで、センサーフュージョン、ヨー角/軌跡、ひずみ計測、医療診断はありません。校正、実機での障害復帰、時間測定が次の課題です。個人とチームの担当、当時のファームウェア、材料・電源構成は原資料での確認が必要です。コードの許諾は [LICENSE](LICENSE) を参照し、第三者の画像・部品資料には自動適用しません。
