@@ -1,20 +1,20 @@
 # Wearable Posture Sensing
 
-ESP8266 / MPU6050 服饰原型与后续倾角、LED 和网络遥测固件。历史实物、课程例程和 2026 年集成固件分别归档；编译通过不等于确认当年的烧录版本。
+Garment-mounted ESP8266 / MPU6050 prototype material and later tilt, LED, and network telemetry firmware. Historical hardware, course sketches, and the 2026 integrated firmware are documented separately; successful compilation does not establish historical deployment.
 
-**简体中文** · [English](README_EN.md) · [日本語](README_JA.md)
+[简体中文](README_ZH.md) · **English** · [日本語](README_JA.md)
 
-[Technical notes](docs/technical-notes.zh-CN.md) · [Setup](docs/setup.zh-CN.md)
+[Technical notes](docs/technical-notes.en.md) · [Setup](docs/setup.en.md)
 
-## 资料与实现范围
+## Evidence and implementation scope
 
-| 材料 | 可确认内容 | 边界 |
+| Material | Confirmed content | Boundary |
 | --- | --- | --- |
-| 实物照片 | ESP-12F 圆形节点、MPU6050 与服饰安装 | 不证明材料性能、PCB 自主设计或角度精度 |
-| 三个课程例程 | 点灯、线性 PWM、Wi-Fi/IMU 初始化与问候报文 | 2026-10-23 修正拼写、PWM 配置和连接逻辑；不是完整姿态系统 |
-| 综合固件 | 加速度倾角、统一阈值、LED、HTTP、TCP | 首次入库 2026-09-15；本轮维护不证明 2024 年已经部署 |
+| Hardware photographs | Circular ESP-12F node, MPU6050, garment mounting | No proof of material performance, original PCB design, or angle accuracy |
+| Three course sketches | Blink, linear PWM, Wi-Fi/IMU initialization and greeting | Spelling, PWM setup, and connection logic repaired on 2026-10-23; not a complete posture system |
+| Integrated firmware | Accelerometer tilt, shared thresholds, LED, HTTP, TCP | First archived on 2026-09-15; current maintenance does not establish deployment in 2024 |
 
-## 数据流
+## Data flow
 
 ```mermaid
 flowchart LR
@@ -25,19 +25,19 @@ flowchart LR
  C --> R[Python receiver]
 ```
 
-## 已实现的软件
+## Implemented software
 
-- GPIO4/5 软件 TWI，400 kHz 请求时钟；校验 14 字节 IMU 读取长度，故障后 2 s 重试。
-- LED 与网页共用俯仰绝对值 >30° 或横滚绝对值 >35°；数据无效时熄灯并显示不可用。
-- 低有效 GPIO2 PWM，状态切换复位并钳位；正常 25 ms 步进、报警 50 ms 翻转。
-- AP+STA、HTTP 页面及带有效性/样本年龄的 JSON；轮询完成后等待 200 ms，失败不保留正常状态。
-- TCP 有效样本发送间隔至少 100 ms，重连退避 2 s；附带 Python 接收器。
+- GPIO4/5 software TWI requests 400 kHz; checked 14-byte IMU reads and 2 s recovery retries.
+- LED and page share absolute pitch >30° or roll >35°; invalid samples turn the LED off and show unavailable data.
+- Active-low GPIO2 PWM with clamped state and reset on mode changes; 25 ms normal steps and 50 ms alert toggles.
+- AP+STA, HTTP dashboard, and validity/sample-age JSON; polling waits 200 ms after completion and clears healthy status on failure.
+- Valid TCP samples are attempted at least 100 ms apart, with 2 s reconnect backoff; a Python receiver is included.
 
-## 服饰原型
+## Garment prototype
 
 ![Historical garment prototype](docs/images/demo_e_textile_garment.jpg)
 
-## 目录与复现
+## Layout and reproduction
 
 ```text
 src/firmware/
@@ -50,10 +50,10 @@ tests/
 docs/                          # images, technical-notes.*, setup.*
 ```
 
-[Setup](docs/setup.zh-CN.md)
+[Setup](docs/setup.en.md)
 
-## 验证与局限
+## Verification and limitations
 
-2026-10-23：综合固件及三个独立例程在 ESP8266 core 3.1.2、MPU6050 1.4.5 下编译通过；7 项反馈逻辑、7 项浏览器模拟和 3 项报文解析测试通过。未烧录、未验证实体 IMU、无线链路、频率、功耗或人体角度准确率。库宏重定义警告仍存在。
+On 2026-10-23 the integrated sketch and all three separate examples compiled with ESP8266 core 3.1.2 and MPU6050 1.4.5. Seven feedback, seven mocked-browser, and three packet-parser cases passed. No flashing, physical IMU, wireless link, timing, power, or human angle-accuracy test was performed. Dependency macro-redefinition warnings remain.
 
-倾角仅使用加速度计；没有姿态融合、航向/轨迹、应变采集或医学诊断。下一步是标定、实体故障恢复和计时测量。个人与团队确切分工、当年固件及硬件材料/电源仍待原始记录确认。代码许可见 [LICENSE](LICENSE)，不自动转授第三方图片或器件资料。
+Tilt uses acceleration only: no sensor fusion, yaw/trajectory, strain acquisition, or medical diagnosis. Calibration, physical fault recovery, and timing measurements remain next steps. Exact personal/team ownership, deployed historical firmware, materials, and power hardware require original records. See [LICENSE](LICENSE) for code; third-party images and component material are not automatically relicensed.

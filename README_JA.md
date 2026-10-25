@@ -2,7 +2,7 @@
 
 衣服に取り付けた ESP8266 / MPU6050 試作機の資料と、後年整備した傾斜角・LED・通信ファームウェアです。実物資料、授業のスケッチ、2026 年の統合版を区別しており、ビルド成功を当時の実機動作の証明とはしていません。
 
-[简体中文](README.md) · [English](README_EN.md) · **日本語**
+[简体中文](README_ZH.md) · [English](README.md) · **日本語**
 
 [Technical notes](docs/technical-notes.ja.md) · [Setup](docs/setup.ja.md)
 
